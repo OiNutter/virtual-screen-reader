@@ -8,13 +8,13 @@ import {
   ERR_VIRTUAL_NOT_STARTED,
 } from "./errors";
 import { getLiveSpokenPhrase, LIVE } from "./getLiveSpokenPhrase";
+import { UserEvent, userEvent } from "@testing-library/user-event";
 import { flattenTree } from "./flattenTree";
 import { getElementNode } from "./commands/getElementNode";
 import { getItemText } from "./getItemText";
 import { getSpokenPhrase } from "./getSpokenPhrase";
 import { observeDOM } from "./observeDOM";
 import { tick } from "./tick";
-import { userEvent } from "@testing-library/user-event";
 import type { VirtualCommandArgs } from "./commands/types";
 
 /**
@@ -100,6 +100,15 @@ export interface StartOptions {
    * Defaults to `false`.
    */
   displayCursor?: boolean;
+
+  /**
+   * A function to be called internally to advance your fake timers (if applicable)
+   *
+   * @example jest.advanceTimersByTime
+   *
+   * @returns A promise that resolves after the specified delay, or void if not asynchronous.
+   */
+  advanceTimers?: (delay: number) => Promise<void> | void;
 }
 
 const defaultUserEventOptions = {
@@ -206,9 +215,16 @@ export class Virtual {
   #treeCache: AccessibilityNode[] | null = null;
   #disconnectDOMObserver: (() => void) | null = null;
   #boundHandleFocusChange: ((event: Event) => Promise<void>) | null = null;
+  #userEvent: UserEvent | null = null;
 
   #checkContainer() {
     if (!this.#container) {
+      throw new Error(ERR_VIRTUAL_NOT_STARTED);
+    }
+  }
+
+  #checkUserEvent() {
+    if (!this.#userEvent) {
       throw new Error(ERR_VIRTUAL_NOT_STARTED);
     }
   }
@@ -284,7 +300,7 @@ export class Virtual {
      * REF: https://www.w3.org/TR/wai-aria-1.2/#aria-modal
      */
     return tree.filter(
-      ({ parentDialog }) => this.#activeNode!.parentDialog === parentDialog
+      ({ parentDialog }) => this.#activeNode!.parentDialog === parentDialog,
     );
   }
 
@@ -330,7 +346,7 @@ export class Virtual {
         getLiveSpokenPhrase({
           container,
           mutation,
-        })
+        }),
       )
       .filter(Boolean)
       .forEach((spokenPhrase) => {
@@ -342,7 +358,7 @@ export class Virtual {
     return this.#spokenPhraseLog.filter(
       (spokenPhrase) =>
         !spokenPhrase.startsWith(LIVE.ASSERTIVE) &&
-        !spokenPhrase.startsWith(LIVE.POLITE)
+        !spokenPhrase.startsWith(LIVE.POLITE),
     );
   }
 
@@ -368,7 +384,7 @@ export class Virtual {
       // cursor has changed.
       const tree = this.#getAccessibilityTree();
       const parentDialogNode = tree.find(
-        ({ node }) => node === accessibilityNode.parentDialog
+        ({ node }) => node === accessibilityNode.parentDialog,
       )!;
 
       const spokenPhrase = getSpokenPhrase(parentDialogNode);
@@ -426,7 +442,7 @@ export class Virtual {
         accessibleValue === this.#activeNode?.accessibleValue &&
         node === this.#activeNode?.node &&
         role === this.#activeNode?.role &&
-        spokenRole === this.#activeNode?.spokenRole
+        spokenRole === this.#activeNode?.spokenRole,
     );
   }
 
@@ -490,8 +506,8 @@ export class Virtual {
   get commands() {
     return Object.fromEntries<keyof VirtualCommands>(
       (Object.keys(commands) as (keyof VirtualCommands)[]).map(
-        (command: keyof VirtualCommands) => [command, command]
-      )
+        (command: keyof VirtualCommands) => [command, command],
+      ),
     ) as { [K in keyof VirtualCommands]: K };
   }
 
@@ -568,10 +584,15 @@ export class Virtual {
   // @ts-ignore for non-TS users we default the container to `null` which
   // prompts the missing container error.
   async start(
-    { container, displayCursor = false, window: root }: StartOptions = {
+    {
+      container,
+      displayCursor = false,
+      window: root,
+      advanceTimers,
+    }: StartOptions = {
       container: null as never,
       displayCursor: false,
-    }
+    },
   ) {
     if (!container) {
       throw new Error(ERR_VIRTUAL_MISSING_CONTAINER);
@@ -593,8 +614,14 @@ export class Virtual {
       (mutations: MutationRecord[]) => {
         this.#invalidateTreeCache();
         this.#announceLiveRegions(mutations);
-      }
+      },
     );
+
+    this.#userEvent = userEvent.setup({
+      ...defaultUserEventOptions,
+      document: container.ownerDocument ?? globalThis.document,
+      ...(advanceTimers ? { advanceTimers } : {}),
+    });
 
     const tree = this.#getAccessibilityTree();
 
@@ -634,7 +661,10 @@ export class Virtual {
    */
   async stop() {
     this.#disconnectDOMObserver?.();
-    this.#container?.removeEventListener("focusin", this.#boundHandleFocusChange);
+    this.#container?.removeEventListener(
+      "focusin",
+      this.#boundHandleFocusChange,
+    );
     this.#invalidateTreeCache();
 
     if (this.#cursor) {
@@ -647,6 +677,7 @@ export class Virtual {
     this.#itemTextLog = [];
     this.#spokenPhraseLog = [];
     this.#boundHandleFocusChange = null;
+    this.#userEvent = null;
     return;
   }
 
@@ -762,6 +793,8 @@ export class Virtual {
    */
   async act() {
     this.#checkContainer();
+    this.#checkUserEvent();
+
     await tick();
 
     if (!this.#activeNode) {
@@ -776,7 +809,7 @@ export class Virtual {
      *
      * REF: https://www.w3.org/TR/core-aam-1.2/#mapping_actions
      */
-    await userEvent.click(target, defaultUserEventOptions);
+    await this.#userEvent?.click(target);
 
     return;
   }
@@ -850,6 +883,7 @@ export class Virtual {
    */
   async press(key: string) {
     this.#checkContainer();
+    this.#checkUserEvent();
     await tick();
 
     if (!this.#activeNode) {
@@ -878,7 +912,7 @@ export class Virtual {
     ].join("");
 
     this.#focusActiveElement();
-    await userEvent.keyboard(keyboardCommand, defaultUserEventOptions);
+    await this.#userEvent?.keyboard(keyboardCommand);
     await this.#refreshState(true);
 
     return;
@@ -911,6 +945,7 @@ export class Virtual {
    */
   async type(text: string) {
     this.#checkContainer();
+    this.#checkUserEvent();
     await tick();
 
     if (!this.#activeNode) {
@@ -918,7 +953,7 @@ export class Virtual {
     }
 
     const target = getElementNode(this.#activeNode);
-    await userEvent.type(target, text, defaultUserEventOptions);
+    await this.#userEvent?.type(target, text);
     await this.#refreshState(true);
 
     return;
@@ -949,7 +984,7 @@ export class Virtual {
    */
   async perform<
     T extends keyof VirtualCommands,
-    K extends Omit<Parameters<VirtualCommands[T]>[0], keyof VirtualCommandArgs>
+    K extends Omit<Parameters<VirtualCommands[T]>[0], keyof VirtualCommandArgs>,
   >(command: T, options?: { [L in keyof K]: K[L] }) {
     this.#checkContainer();
     await tick();
@@ -1013,6 +1048,7 @@ export class Virtual {
    */
   async click({ button = "left", clickCount = 1 } = {}) {
     this.#checkContainer();
+    this.#checkUserEvent();
     await tick();
 
     if (!this.#activeNode) {
@@ -1023,10 +1059,7 @@ export class Virtual {
     const keys = key.repeat(clickCount);
     const target = getElementNode(this.#activeNode);
 
-    await userEvent.pointer(
-      [{ target }, { keys, target }],
-      defaultUserEventOptions
-    );
+    await this.#userEvent?.pointer([{ target }, { keys, target }]);
 
     return;
   }
