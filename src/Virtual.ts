@@ -8,7 +8,7 @@ import {
   ERR_VIRTUAL_NOT_STARTED,
 } from "./errors";
 import { getLiveSpokenPhrase, LIVE } from "./getLiveSpokenPhrase";
-import { UserEvent, userEvent } from "@testing-library/user-event";
+import { type UserEvent, userEvent } from "@testing-library/user-event";
 import { flattenTree } from "./flattenTree";
 import { getElementNode } from "./commands/getElementNode";
 import { getItemText } from "./getItemText";
