@@ -809,7 +809,7 @@ export class Virtual {
      *
      * REF: https://www.w3.org/TR/core-aam-1.2/#mapping_actions
      */
-    await this.#userEvent?.click(target);
+    await this.#userEvent!.click(target);
 
     return;
   }
@@ -912,7 +912,7 @@ export class Virtual {
     ].join("");
 
     this.#focusActiveElement();
-    await this.#userEvent?.keyboard(keyboardCommand);
+    await this.#userEvent!.keyboard(keyboardCommand);
     await this.#refreshState(true);
 
     return;
@@ -953,7 +953,7 @@ export class Virtual {
     }
 
     const target = getElementNode(this.#activeNode);
-    await this.#userEvent?.type(target, text);
+    await this.#userEvent!.type(target, text);
     await this.#refreshState(true);
 
     return;
@@ -1059,7 +1059,7 @@ export class Virtual {
     const keys = key.repeat(clickCount);
     const target = getElementNode(this.#activeNode);
 
-    await this.#userEvent?.pointer([{ target }, { keys, target }]);
+    await this.#userEvent!.pointer([{ target }, { keys, target }]);
 
     return;
   }
