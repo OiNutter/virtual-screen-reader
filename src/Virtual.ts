@@ -223,12 +223,6 @@ export class Virtual {
     }
   }
 
-  #checkUserEvent() {
-    if (!this.#userEvent) {
-      throw new Error(ERR_VIRTUAL_NOT_STARTED);
-    }
-  }
-
   #createCursor(root: Root | undefined) {
     if (!root?.document) {
       return;
@@ -793,7 +787,6 @@ export class Virtual {
    */
   async act() {
     this.#checkContainer();
-    this.#checkUserEvent();
 
     await tick();
 
@@ -883,7 +876,6 @@ export class Virtual {
    */
   async press(key: string) {
     this.#checkContainer();
-    this.#checkUserEvent();
     await tick();
 
     if (!this.#activeNode) {
@@ -945,7 +937,6 @@ export class Virtual {
    */
   async type(text: string) {
     this.#checkContainer();
-    this.#checkUserEvent();
     await tick();
 
     if (!this.#activeNode) {
@@ -1048,7 +1039,6 @@ export class Virtual {
    */
   async click({ button = "left", clickCount = 1 } = {}) {
     this.#checkContainer();
-    this.#checkUserEvent();
     await tick();
 
     if (!this.#activeNode) {
